@@ -24,6 +24,7 @@ const express = require("express");
 const bodyParser = require("body-parser");
 const mongoose = require("mongoose");
 const Url = require("./models/URL");
+const finder = require("./urlFinder");
 const dns = require("dns");
 
 const app = express();
@@ -39,9 +40,27 @@ mongoose.connect("mongodb://localhost:27017/urlShortDB", {
 
 
 app.get("/api/shorturl/:url", (req, res) => {
-    console.log(req.params.url);
-    res.send("GET");
-})
+    // parameter url is dns
+    if(isNaN(Number(req.params.url))){
+        res.redirect(301, "http://" + req.params.url);
+    }
+    else{
+        Url.findOne({ _id: req.params.url }, (err, result) => {
+            if(err) throw err;
+    
+            // if result url is found
+            // result = short_url
+            if(result){
+                res.redirect("http://" + result.original_url, 301);
+            }
+            else{
+                res.status(404).json({"error": "Short url does not exist."});
+            }
+        });
+    }
+    
+});
+
 
 app.post("/api/shorturl/new/*", (req, res) => {
     // get the url and parse the parameter.
@@ -52,17 +71,16 @@ app.post("/api/shorturl/new/*", (req, res) => {
         
         // if the domain does not eixst, the cox redirects to 92.242.140.2
         if(addr === "92.242.140.2") {
-            res.status(404).json({"error": "Domain Name does not exist."});
+            res.status(404).json({"error": "Domain name does not exist."});
         }
         else{
-            urlFinder(urlParam, res);
+            finder.urlFinder(urlParam, res);
         }
     })
-
 });
 
 // Error Handling
-app.all("*", (req, res, next) => {
+app.all("*", (req, res) => {
     res.status(404).json({"error": "invalid URL"});
 });
 
@@ -74,39 +92,4 @@ app.listen(port, "0.0.0.0", () => {
 });
 
 
-// Check duplicate of urlParam in DB
-function urlFinder(urlParam, res){
-    Url.findOne({original_url: urlParam}, (err, queryResult) => {
-        if(err) throw err;
-        
-        // if queryResult is not null,
-        // the original_url name already exists
-        if(queryResult){
-            res.json({
-                "error": "The url is shortened already", 
-                "original_url": urlParam,
-                "short_url": queryResult._id
-            });
-        }
-        else{  
-            // count() to increment _id or short_url
-            Url.countDocuments()
-            .then(count => {
-                let newCount = count + 1;   // short_url
-                const urlModel = new Url({
-                    _id: newCount,
-                    original_url: urlParam
-                });
-        
-                urlModel.save()
-                .then( 
-                    res.json({
-                    "original_url": urlParam,
-                    "short_url": newCount 
-                    })
-                );
-            })
-            .catch(err => console.log(err));
-        }
-    });
-}
+
